@@ -21,17 +21,24 @@ const SITE_CONFIGS = {
   },
 };
 
+// Service Workerが長い処理中に停止しないよう定期的にpingして生かし続ける
+function keepAlive() {
+  return setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'scrape') {
+    const timer = keepAlive();
     handleScrape(message.tabId, message.siteKey)
-      .then(sendResponse)
-      .catch(e => sendResponse({ success: false, error: e.message }));
+      .then(r => { clearInterval(timer); sendResponse(r); })
+      .catch(e => { clearInterval(timer); sendResponse({ success: false, error: e.message }); });
     return true;
   }
   if (message.action === 'retryFailed') {
+    const timer = keepAlive();
     handleRetryFailed(message.siteKey)
-      .then(sendResponse)
-      .catch(e => sendResponse({ success: false, error: e.message }));
+      .then(r => { clearInterval(timer); sendResponse(r); })
+      .catch(e => { clearInterval(timer); sendResponse({ success: false, error: e.message }); });
     return true;
   }
 });
