@@ -6,7 +6,7 @@
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "*://naname42.com/*",
-    "*://contents.fc2.com/*",
+    "*://*.fc2.com/*",
     "*://market.laxd.com/*",
     "https://script.google.com/*"
   ],
