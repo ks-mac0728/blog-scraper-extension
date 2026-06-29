@@ -1,6 +1,6 @@
 // ========== 設定（必ず書き換えてください） ==========
-var SPREADSHEET_ID  = 'YOUR_SPREADSHEET_ID'; // スプレッドシートのID
-var PARENT_FOLDER_ID = 'YOUR_FOLDER_ID';     // 画像を保存するドライブフォルダのID
+var SPREADSHEET_ID  = '1kTcfBD_0FFplFjHR0j-wXexpdOV783QSNnOO9WXseVo'; // スプレッドシートのID
+var PARENT_FOLDER_ID = '1N8b7OGZo8ZNuanTWvZEc8tNY-aZtWIiY';     // 画像を保存するドライブフォルダのID
 
 var SITE_MAP = {
   'blog-entry-570': {

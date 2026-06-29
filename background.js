@@ -1,5 +1,5 @@
 // ========== 設定（デプロイ後に YOUR_SCRIPT_ID を書き換えてください） ==========
-const GAS_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyMpaRiFj_N_fSHNf5RE3bVJmMtGwaW9Py9NOe47Ki3LPy41IGn22_HKIl1k6k3C3eRdw/exec';
 
 const SITE_CONFIGS = {
   'blog-entry-570': {
