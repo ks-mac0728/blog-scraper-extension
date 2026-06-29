@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "FC2ブログスクレイパー",
+  "version": "1.0",
+  "description": "naname42.comから作品情報を収集してGoogleスプレッドシートへ記録する",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "*://naname42.com/*",
+    "*://contents.fc2.com/*",
+    "*://market.laxd.com/*",
+    "https://script.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

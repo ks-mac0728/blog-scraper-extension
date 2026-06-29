@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      color: #333;
+      margin: 0;
+    }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    #site-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    #site-badge.inactive {
+      background: #fce8e6;
+      color: #d93025;
+    }
+    #status {
+      min-height: 52px;
+      padding: 8px 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    #status.success { color: #188038; }
+    #status.error   { color: #d93025; }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: #1557b0; }
+    button:disabled { background: #bbb; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h1>FC2ブログスクレイパー</h1>
+  <div id="site-badge">サイト確認中...</div>
+  <div id="status">対象ページを開いてください。</div>
+  <button id="run-btn" disabled>スクレイピング開始</button>
+  <script src="popup.js"></script>
+</body>
+</html>
