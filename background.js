@@ -89,24 +89,33 @@ async function handleScrape(tabId, siteKey) {
   if (scraped.items.length === 0) return { success: true, savedCount: 0, imageCount: 0 };
 
   // Service Worker側で画像をfetch（declarativeNetRequestでCORSを回避）
-  for (const item of scraped.items) {
-    if (item.sourceImageUrl) {
-      item.imageBase64 = await fetchAsBase64(item.sourceImageUrl, config.imageReferer);
-    } else {
-      item.imageBase64 = null;
+  // GASへのPOSTサイズ上限(413エラー)を避けるため、数件ずつ小分けにして送信する
+  const BATCH_SIZE = 5;
+  let totalSaved = 0;
+  let totalImages = 0;
+  for (let i = 0; i < scraped.items.length; i += BATCH_SIZE) {
+    const batchItems = scraped.items.slice(i, i + BATCH_SIZE);
+    for (const item of batchItems) {
+      if (item.sourceImageUrl) {
+        item.imageBase64 = await fetchAsBase64(item.sourceImageUrl, config.imageReferer);
+      } else {
+        item.imageBase64 = null;
+      }
     }
+
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'save', siteKey, items: batchItems }),
+    });
+    if (!res.ok) throw new Error('GAS通信エラー: HTTP ' + res.status);
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+    totalSaved += result.savedCount;
+    totalImages += result.imageCount;
   }
 
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'save', siteKey, items: scraped.items }),
-  });
-  if (!res.ok) throw new Error('GAS通信エラー: HTTP ' + res.status);
-  const result = await res.json();
-  if (result.error) throw new Error(result.error);
-
-  return { success: true, savedCount: result.savedCount, imageCount: result.imageCount };
+  return { success: true, savedCount: totalSaved, imageCount: totalImages };
 }
 
 // ========== 取得失敗行の再取得 ==========
@@ -121,22 +130,29 @@ async function handleRetryFailed(tabId, siteKey) {
   if (!rows || rows.length === 0) return { success: true, updatedCount: 0 };
 
   // Service Worker側で画像をfetch（declarativeNetRequestでCORSを回避）
-  const fetched = [];
-  for (const row of rows) {
-    const b64 = await fetchAsBase64(row.sourceImageUrl, config.imageReferer);
-    fetched.push({ rowIndex: row.rowIndex, no: row.no, sourceImageUrl: row.sourceImageUrl, imageBase64: b64 });
+  // GASへのPOSTサイズ上限(413エラー)を避けるため、数件ずつ小分けにして送信する
+  const BATCH_SIZE = 5;
+  let totalUpdated = 0;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batchRows = rows.slice(i, i + BATCH_SIZE);
+    const fetched = [];
+    for (const row of batchRows) {
+      const b64 = await fetchAsBase64(row.sourceImageUrl, config.imageReferer);
+      fetched.push({ rowIndex: row.rowIndex, no: row.no, sourceImageUrl: row.sourceImageUrl, imageBase64: b64 });
+    }
+
+    const postRes = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'retryImages', siteKey, items: fetched }),
+    });
+    if (!postRes.ok) throw new Error('GAS通信エラー: HTTP ' + postRes.status);
+    const result = await postRes.json();
+    if (result.error) throw new Error(result.error);
+    totalUpdated += result.updatedCount;
   }
 
-  const postRes = await fetch(GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'retryImages', siteKey, items: fetched }),
-  });
-  if (!postRes.ok) throw new Error('GAS通信エラー: HTTP ' + postRes.status);
-  const result = await postRes.json();
-  if (result.error) throw new Error(result.error);
-
-  return { success: true, updatedCount: result.updatedCount };
+  return { success: true, updatedCount: totalUpdated };
 }
 
 // ========== スクレイパー本体（タブ内・DOMパースのみ） ==========
