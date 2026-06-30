@@ -23,9 +23,52 @@ var SITE_MAP = {
   },
 };
 
+// Noの先頭記号（プレフィックス）→ シリーズ名
+var SERIES_MAP = {
+  'No': '石橋渉の素人生ドル',
+  'h':  '石橋渉のHUNTING',
+  'Sg': '素人SSSゲッター',
+  'v':  '石橋渉のVDOLハンター',
+  'Bk': '石橋渉のビキニHUNTING',
+  'Cs': '石橋渉のコスプレ生ドル',
+  'Cr': '石橋渉のコスプレ生ドル',
+  'ii': 'イケメン君が行く！！',
+  'Ky': '石橋渉の巨乳HUNTING',
+  'Uv': 'ウブでかわいい女のコにオナホールを見せてシコシコをお願いしました。',
+};
+
+// プレフィックスが無い（数字のみ等）特殊ケースの個別対応
+var SERIES_SPECIAL_CASES = {
+  'ゲッターBEST6未公開映像': '素人SSSゲッター',
+  '未発売': '石橋渉の素人生ドル',
+};
+
+// Noの文字列（例: "h754-755", "Bk17-18", "No665"）から
+// シリーズ名・出演者No（カンマ区切り）を抽出する。シリーズNoは詳細ページにしか無いため空欄のまま返す。
+function extractSeriesInfo(no) {
+  if (!no) return { seriesName: '', performerNo: '' };
+
+  if (SERIES_SPECIAL_CASES[no]) {
+    return { seriesName: SERIES_SPECIAL_CASES[no], performerNo: '' };
+  }
+
+  var m = no.match(/^([A-Za-z]*)([\d-]*)$/);
+  if (!m) return { seriesName: '', performerNo: '' };
+
+  var prefix = m[1];
+  var digits = m[2];
+  var seriesName = SERIES_MAP[prefix] || '';
+  var performerNo = digits
+    ? digits.split('-').filter(function(s) { return s !== ''; })
+        .map(function(s) { return String(parseInt(s, 10)); }).join(',')
+    : '';
+
+  return { seriesName: seriesName, performerNo: performerNo };
+}
+
 // hasReviewによって列番号が変わる
-// hasReview=true:  No(1) Noリンク(2) タイトル(3) 作品リンク(4) 画像Drive(5) 画像ステータス(6) レビュー(7) 販売日(8) ソース画像URL(9) 販売状況(10) レビュー詳細(11)
-// hasReview=false: No(1) Noリンク(2) タイトル(3) 作品リンク(4) 画像Drive(5) 画像ステータス(6) 販売日(7) ソース画像URL(8) 販売状況(9) レビュー詳細(10)
+// hasReview=true:  No(1) Noリンク(2) タイトル(3) 作品リンク(4) 画像Drive(5) 画像ステータス(6) レビュー(7) 販売日(8) ソース画像URL(9) 販売状況(10) レビュー詳細(11) シリーズ名(12) シリーズNo(13) 出演者No(14)
+// hasReview=false: No(1) Noリンク(2) タイトル(3) 作品リンク(4) 画像Drive(5) 画像ステータス(6) 販売日(7) ソース画像URL(8) 販売状況(9) シリーズ名(10) シリーズNo(11) 出演者No(12)
 function colNums(hasReview) {
   return {
     noLink:         2,
@@ -36,7 +79,10 @@ function colNums(hasReview) {
     saleDate:       hasReview ? 8 : 7,
     sourceImageUrl: hasReview ? 9 : 8,
     saleStatus:     hasReview ? 10 : 9,
-    reviewDetail:   hasReview ? 11 : 10,
+    reviewDetail:   hasReview ? 11 : null,
+    seriesName:     hasReview ? 12 : 10,
+    seriesNo:       hasReview ? 13 : 11,
+    performerNo:    hasReview ? 14 : 12,
   };
 }
 
@@ -179,6 +225,37 @@ function doGet(e) {
     return jsonOut({ rows: rows });
   }
 
+  if (action === 'backfillSeriesInfo') {
+    // 既存の全行について、No列の値からシリーズ名・出演者Noを再計算して書き込む
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var updatedCounts = {};
+
+    Object.keys(SITE_MAP).forEach(function(sk) {
+      var cfg = SITE_MAP[sk];
+      var sheet = ss.getSheetByName(cfg.sheetName);
+      if (!sheet || sheet.getLastRow() < 2) { updatedCounts[sk] = 0; return; }
+
+      ensureHeader(sheet, cfg.hasReview);
+      var cols = colNums(cfg.hasReview);
+      var lastRow = sheet.getLastRow();
+      var nos = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+
+      var seriesNameValues = [];
+      var performerNoValues = [];
+      nos.forEach(function(row) {
+        var info = extractSeriesInfo(String(row[0] || ''));
+        seriesNameValues.push([info.seriesName]);
+        performerNoValues.push([info.performerNo]);
+      });
+
+      sheet.getRange(2, cols.seriesName, seriesNameValues.length, 1).setValues(seriesNameValues);
+      sheet.getRange(2, cols.performerNo, performerNoValues.length, 1).setValues(performerNoValues);
+      updatedCounts[sk] = seriesNameValues.length;
+    });
+
+    return jsonOut({ success: true, updatedCounts: updatedCounts });
+  }
+
   return jsonOut({ error: '不明なアクション: ' + action });
 }
 
@@ -254,12 +331,15 @@ function doSave(data) {
       }
     }
 
+    var seriesInfo = extractSeriesInfo(String(item.no));
+
     var row = config.hasReview
       ? [item.no, item.noLink || '', item.title || '', item.videoUrl || '',
          driveUrl, imageStatus, item.review || '', item.formattedDate || '', item.sourceImageUrl || '',
-         '販売中', item.reviewDetail || '']
+         '販売中', item.reviewDetail || '', seriesInfo.seriesName, '', seriesInfo.performerNo]
       : [item.no, item.noLink || '', item.title || '', item.videoUrl || '',
-         driveUrl, imageStatus, item.formattedDate || '', item.sourceImageUrl || '', '販売中'];
+         driveUrl, imageStatus, item.formattedDate || '', item.sourceImageUrl || '', '販売中',
+         seriesInfo.seriesName, '', seriesInfo.performerNo];
 
     sheet.appendRow(row);
     savedCount++;
@@ -394,8 +474,8 @@ function ensureHeader(sheet, hasReview) {
 
   if (sheet.getRange(1, 1).getValue() !== 'No') {
     var header = hasReview
-      ? ['No', 'Noリンク', 'タイトル', '作品リンク', '画像(Driveリンク)', '画像ステータス', 'レビュー', '販売日', 'ソース画像URL', '販売状況', 'レビュー詳細']
-      : ['No', 'Noリンク', 'タイトル', '作品リンク', '画像(Driveリンク)', '画像ステータス', '販売日', 'ソース画像URL', '販売状況'];
+      ? ['No', 'Noリンク', 'タイトル', '作品リンク', '画像(Driveリンク)', '画像ステータス', 'レビュー', '販売日', 'ソース画像URL', '販売状況', 'レビュー詳細', 'シリーズ名', 'シリーズNo', '出演者No']
+      : ['No', 'Noリンク', 'タイトル', '作品リンク', '画像(Driveリンク)', '画像ステータス', '販売日', 'ソース画像URL', '販売状況', 'シリーズ名', 'シリーズNo', '出演者No'];
     sheet.getRange(1, 1, 1, header.length)
       .setValues([header])
       .setBackground('#d9ead3')
@@ -405,18 +485,23 @@ function ensureHeader(sheet, hasReview) {
   }
 
   // 既存シートに無い列があれば追記する（後方互換のためのバックフィル）
-  if (sheet.getRange(1, cols.saleStatus).getValue() !== '販売状況') {
-    sheet.getRange(1, cols.saleStatus)
-      .setValue('販売状況')
-      .setBackground('#d9ead3')
-      .setFontWeight('bold');
-  }
-  if (hasReview && sheet.getRange(1, cols.reviewDetail).getValue() !== 'レビュー詳細') {
-    sheet.getRange(1, cols.reviewDetail)
-      .setValue('レビュー詳細')
-      .setBackground('#d9ead3')
-      .setFontWeight('bold');
-  }
+  var backfills = [
+    [cols.saleStatus, '販売状況'],
+    [cols.seriesName, 'シリーズ名'],
+    [cols.seriesNo, 'シリーズNo'],
+    [cols.performerNo, '出演者No'],
+  ];
+  if (hasReview) backfills.push([cols.reviewDetail, 'レビュー詳細']);
+
+  backfills.forEach(function(pair) {
+    var col = pair[0], label = pair[1];
+    if (sheet.getRange(1, col).getValue() !== label) {
+      sheet.getRange(1, col)
+        .setValue(label)
+        .setBackground('#d9ead3')
+        .setFontWeight('bold');
+    }
+  });
 }
 
 function getOrCreateFolder(parent, folderName) {
