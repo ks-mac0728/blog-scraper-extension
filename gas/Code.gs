@@ -28,8 +28,11 @@ var SITE_MAP = {
 // hasReview=false: No(1) Noリンク(2) タイトル(3) 作品リンク(4) 画像Drive(5) 画像ステータス(6) 販売日(7) ソース画像URL(8)
 function colNums(hasReview) {
   return {
+    title:          3,
+    videoUrl:       4,
     driveUrl:       5,
     imageStatus:    6,
+    saleDate:       hasReview ? 8 : 7,
     sourceImageUrl: hasReview ? 9 : 8,
   };
 }
@@ -83,6 +86,36 @@ function doGet(e) {
     return jsonOut({ rows: rows });
   }
 
+  if (action === 'getMissingRows') {
+    var siteKey = e.parameter.siteKey;
+    var config = SITE_MAP[siteKey];
+    if (!config) return jsonOut({ error: '不明なサイト: ' + siteKey });
+
+    var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(config.sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return jsonOut({ rows: [] });
+
+    var cols = colNums(config.hasReview);
+    var lastRow = sheet.getLastRow();
+    var data = sheet.getRange(2, 1, lastRow - 1, cols.sourceImageUrl).getValues();
+
+    var rows = [];
+    data.forEach(function(row, i) {
+      var driveUrl = String(row[cols.driveUrl - 1] || '');
+      if (driveUrl) return; // 既に画像がある行は対象外
+
+      rows.push({
+        rowIndex: i + 2,
+        no: String(row[0] || ''),
+        title: String(row[cols.title - 1] || ''),
+        videoUrl: String(row[cols.videoUrl - 1] || ''),
+        saleDate: String(row[cols.saleDate - 1] || ''),
+      });
+    });
+
+    return jsonOut({ rows: rows });
+  }
+
   return jsonOut({ error: '不明なアクション: ' + action });
 }
 
@@ -97,6 +130,10 @@ function doPost(e) {
 
     if (data.action === 'retryImages') {
       return doRetryImages(data);
+    }
+
+    if (data.action === 'fillMissing') {
+      return doFillMissing(data);
     }
 
     return jsonOut({ error: '不明なアクション: ' + data.action });
@@ -188,6 +225,58 @@ function doRetryImages(data) {
       updatedCount++;
     } catch (imgErr) {
       console.error('再取得保存エラー No=' + item.no + ':', imgErr.message);
+    }
+  });
+
+  return jsonOut({ success: true, updatedCount: updatedCount });
+}
+
+// 他サイト（laxd.com等のmakerページ）から見つかった情報で、欠けている項目を埋める
+function doFillMissing(data) {
+  var siteKey = data.siteKey;
+  var config  = SITE_MAP[siteKey];
+  if (!config) return jsonOut({ error: '不明なサイト: ' + siteKey });
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(config.sheetName);
+  if (!sheet) return jsonOut({ error: 'シートが見つかりません: ' + config.sheetName });
+
+  var parentFolder = DriveApp.getFolderById(PARENT_FOLDER_ID);
+  var imageFolder  = getOrCreateFolder(parentFolder, config.folderName);
+  var cols = colNums(config.hasReview);
+
+  var updatedCount = 0;
+
+  (data.items || []).forEach(function(item) {
+    if (!item.rowIndex) return;
+
+    if (item.videoUrl) {
+      var videoCell = sheet.getRange(item.rowIndex, cols.videoUrl);
+      if (!videoCell.getValue()) videoCell.setValue(item.videoUrl);
+    }
+
+    if (item.formattedDate) {
+      var dateCell = sheet.getRange(item.rowIndex, cols.saleDate);
+      if (!dateCell.getValue()) dateCell.setValue(item.formattedDate);
+    }
+
+    if (item.imageBase64) {
+      try {
+        var result = saveImageToDrive(imageFolder, item.no, item.imageBase64);
+        sheet.getRange(item.rowIndex, cols.driveUrl).setValue(result.driveUrl);
+        sheet.getRange(item.rowIndex, cols.imageStatus).setValue('保存済み');
+        sheet.getRange(item.rowIndex, cols.sourceImageUrl).setValue(item.sourceImageUrl || '');
+        updatedCount++;
+      } catch (imgErr) {
+        sheet.getRange(item.rowIndex, cols.imageStatus).setValue('取得失敗');
+        sheet.getRange(item.rowIndex, cols.sourceImageUrl).setValue(item.sourceImageUrl || '');
+        console.error('画像保存エラー No=' + item.no + ':', imgErr.message);
+      }
+    } else if (item.sourceImageUrl) {
+      // 画像fetch自体に失敗したが、ソースURLは判明している → 後で再取得ボタンの対象にする
+      sheet.getRange(item.rowIndex, cols.imageStatus).setValue('取得失敗');
+      sheet.getRange(item.rowIndex, cols.sourceImageUrl).setValue(item.sourceImageUrl);
+      updatedCount++;
     }
   });
 

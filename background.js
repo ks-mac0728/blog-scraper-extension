@@ -18,6 +18,7 @@ const SITE_CONFIGS = {
     hasReview: false,
     highQualityWidth: null,
     imageReferer: null,
+    makerUrls: ['https://market.laxd.com/maker/purikara/articles?sort=date&order=desc'],
   },
 };
 
@@ -36,6 +37,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'retryFailed') {
     const timer = keepAlive();
     handleRetryFailed(message.tabId, message.siteKey)
+      .then(r => { clearInterval(timer); sendResponse(r); })
+      .catch(e => { clearInterval(timer); sendResponse({ success: false, error: e.message }); });
+    return true;
+  }
+  if (message.action === 'fillMissing') {
+    const timer = keepAlive();
+    handleFillMissing(message.siteKey)
       .then(r => { clearInterval(timer); sendResponse(r); })
       .catch(e => { clearInterval(timer); sendResponse({ success: false, error: e.message }); });
     return true;
@@ -153,6 +161,77 @@ async function handleRetryFailed(tabId, siteKey) {
   }
 
   return { success: true, updatedCount: totalUpdated };
+}
+
+// ========== makerページから欠損情報（主に画像）を補完 ==========
+async function handleFillMissing(siteKey) {
+  const config = SITE_CONFIGS[siteKey];
+  if (!config) throw new Error('対応していないサイトです: ' + siteKey);
+  if (!config.makerUrls || config.makerUrls.length === 0) {
+    throw new Error('このサイトはmakerページ補完に対応していません: ' + siteKey);
+  }
+
+  const res = await fetch(GAS_URL + '?action=getMissingRows&siteKey=' + siteKey);
+  if (!res.ok) throw new Error('欠損行取得エラー: HTTP ' + res.status);
+  const { rows, error } = await res.json();
+  if (error) throw new Error(error);
+  if (!rows || rows.length === 0) return { success: true, updatedCount: 0, matchedCount: 0 };
+
+  // makerページから アイテムID -> {title, thumbnailUrl} のマップを作る
+  const itemMap = {};
+  for (const makerUrl of config.makerUrls) {
+    const html = await (await fetch(makerUrl)).text();
+    const items = parseMakerPage(html);
+    for (const item of items) itemMap[item.itemId] = item;
+  }
+
+  // 欠損行のvideoUrlからアイテムIDを取り出し、マップと突き合わせる
+  const toFetch = [];
+  for (const row of rows) {
+    const idMatch = (row.videoUrl || '').match(/\/item\/([A-Za-z0-9]+)\//);
+    const itemId = idMatch ? idMatch[1] : null;
+    const matched = itemId ? itemMap[itemId] : null;
+    if (matched) {
+      toFetch.push({ rowIndex: row.rowIndex, no: row.no, videoUrl: row.videoUrl, formattedDate: row.saleDate, thumbnailUrl: matched.thumbnailUrl });
+    }
+  }
+
+  const BATCH_SIZE = 5;
+  let totalUpdated = 0;
+  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+    const batch = toFetch.slice(i, i + BATCH_SIZE);
+    const items = [];
+    for (const row of batch) {
+      const hqUrl = row.thumbnailUrl.replace(/\/w\d+\//, '/w1080/');
+      const b64 = await fetchAsBase64(hqUrl, 'https://market.laxd.com/');
+      items.push({ rowIndex: row.rowIndex, no: row.no, sourceImageUrl: hqUrl, imageBase64: b64 });
+    }
+
+    const postRes = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'fillMissing', siteKey, items }),
+    });
+    if (!postRes.ok) throw new Error('GAS通信エラー: HTTP ' + postRes.status);
+    const result = await postRes.json();
+    if (result.error) throw new Error(result.error);
+    totalUpdated += result.updatedCount;
+  }
+
+  return { success: true, updatedCount: totalUpdated, matchedCount: toFetch.length, missingCount: rows.length };
+}
+
+// makerページ（laxd.com商品一覧）のHTMLから アイテムID・タイトル・サムネイルURL を抽出
+function parseMakerPage(html) {
+  const items = [];
+  const linkRe = /<a href="\/item\/([A-Za-z0-9]+)\/"\s*title="([^"]*)"[^>]*>\s*<img src="([^"]+)"/g;
+  let m;
+  while ((m = linkRe.exec(html)) !== null) {
+    let thumbnailUrl = m[3];
+    if (thumbnailUrl.startsWith('//')) thumbnailUrl = 'https:' + thumbnailUrl;
+    items.push({ itemId: m[1], title: m[2], thumbnailUrl });
+  }
+  return items;
 }
 
 // ========== スクレイパー本体（タブ内・DOMパースのみ） ==========

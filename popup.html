@@ -51,6 +51,8 @@
     #run-btn:hover:not(:disabled) { background: #1557b0; }
     #retry-btn { background: #e8710a; }
     #retry-btn:hover:not(:disabled) { background: #b85c08; }
+    #fill-btn { background: #8430ce; }
+    #fill-btn:hover:not(:disabled) { background: #6a26a8; }
     button:disabled { background: #bbb; cursor: not-allowed; }
   </style>
 </head>
@@ -60,6 +62,7 @@
   <div id="status">対象ページを開いてください。</div>
   <button id="run-btn" disabled>スクレイピング開始</button>
   <button id="retry-btn" disabled>画像再取得（取得失敗分）</button>
+  <button id="fill-btn" disabled>欠損情報を補完（他サイト参照）</button>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -17,12 +17,14 @@ async function init() {
   const badge   = document.getElementById('site-badge');
   const runBtn  = document.getElementById('run-btn');
   const retryBtn = document.getElementById('retry-btn');
+  const fillBtn = document.getElementById('fill-btn');
 
   if (currentSiteKey) {
     badge.textContent = '検出: ' + SITE_NAMES[currentSiteKey];
     setStatus('ボタンを押してスクレイピングを開始します。');
     runBtn.disabled = false;
     retryBtn.disabled = false;
+    fillBtn.disabled = false;
   } else {
     badge.textContent = '対象外ページ';
     badge.classList.add('inactive');
@@ -31,6 +33,7 @@ async function init() {
 
   runBtn.addEventListener('click', onRunClick);
   retryBtn.addEventListener('click', onRetryClick);
+  fillBtn.addEventListener('click', onFillClick);
 }
 
 async function onRunClick() {
@@ -83,9 +86,34 @@ async function onRetryClick() {
   }
 }
 
+async function onFillClick() {
+  setButtonsDisabled(true);
+  setStatus('他サイトの一覧から欠損情報を補完中...');
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'fillMissing',
+      siteKey: currentSiteKey,
+    });
+    if (response.success) {
+      if (response.updatedCount === 0) {
+        setStatus('欠損行はありませんでした。\n（マッチ: ' + (response.matchedCount || 0) + ' / 欠損: ' + (response.missingCount || 0) + ' 件）', 'success');
+      } else {
+        setStatus('完了！\n補完: ' + response.updatedCount + ' 件\n（マッチ: ' + response.matchedCount + ' / 欠損: ' + response.missingCount + ' 件）', 'success');
+      }
+    } else {
+      setStatus('エラー: ' + response.error, 'error');
+    }
+  } catch (e) {
+    setStatus('エラー: ' + e.message, 'error');
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
 function setButtonsDisabled(disabled) {
   document.getElementById('run-btn').disabled = disabled;
   document.getElementById('retry-btn').disabled = disabled;
+  document.getElementById('fill-btn').disabled = disabled;
 }
 
 function setStatus(msg, type) {
