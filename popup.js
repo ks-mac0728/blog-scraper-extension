@@ -64,6 +64,7 @@ async function onRetryClick() {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'retryFailed',
+      tabId: currentTabId,
       siteKey: currentSiteKey,
     });
     if (response.success) {
