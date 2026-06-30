@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Allow-Methods", "operation": "set", "value": "GET" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.laxd.com/*",
+      "resourceTypes": ["xmlhttprequest", "other", "image"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Allow-Methods", "operation": "set", "value": "GET" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.fc2.com/*",
+      "resourceTypes": ["xmlhttprequest", "other", "image"]
+    }
+  }
+]

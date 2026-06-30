@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "*://naname42.com/*",
@@ -14,6 +15,15 @@
     "*://*.laxd.com/*",
     "https://script.google.com/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_cors",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "action": {
     "default_popup": "popup.html"
   },
