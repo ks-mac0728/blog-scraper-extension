@@ -1,4 +1,4 @@
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzpAxmtdCdbb_DRwh0LevDEhfzaiJirAgbnkKeu2jG2jwxM0TyPUCfDin088acxnAFObA/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw1SmD7DN_A2Hr0PMRO9Xzt8AqAZj2nsyI0AjpBCgGyOyoSDXJSRGBW3RaCrPNzDlqYeg/exec';
 
 const SITE_CONFIGS = {
   'blog-entry-570': {
@@ -21,7 +21,6 @@ const SITE_CONFIGS = {
   },
 };
 
-// Service Workerが長い処理中に停止しないよう定期的にpingして生かし続ける
 function keepAlive() {
   return setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
 }
@@ -36,7 +35,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.action === 'retryFailed') {
     const timer = keepAlive();
-    handleRetryFailed(message.siteKey)
+    handleRetryFailed(message.tabId, message.siteKey)
       .then(r => { clearInterval(timer); sendResponse(r); })
       .catch(e => { clearInterval(timer); sendResponse({ success: false, error: e.message }); });
     return true;
@@ -56,7 +55,7 @@ async function handleScrape(tabId, siteKey) {
     console.warn('[BG] 既存No取得失敗:', e.message);
   }
 
-  // タブ内でDOM解析（テキスト情報とsourceImageUrlのみ）
+  // タブ内でスクレイピング＋画像fetch（コンテンツスクリプトはhost_permissionsでCORSを回避）
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     func: scraperFunc,
@@ -68,7 +67,6 @@ async function handleScrape(tabId, siteKey) {
   if (scraped.error) throw new Error(scraped.error);
   if (scraped.items.length === 0) return { success: true, savedCount: 0, imageCount: 0 };
 
-  // GASへPOST（画像はGAS側でUrlFetchAppでダウンロード）
   const res = await fetch(GAS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
@@ -82,7 +80,7 @@ async function handleScrape(tabId, siteKey) {
 }
 
 // ========== 取得失敗行の再取得 ==========
-async function handleRetryFailed(siteKey) {
+async function handleRetryFailed(tabId, siteKey) {
   const config = SITE_CONFIGS[siteKey];
   if (!config) throw new Error('対応していないサイトです: ' + siteKey);
 
@@ -92,11 +90,20 @@ async function handleRetryFailed(siteKey) {
   if (error) throw new Error(error);
   if (!rows || rows.length === 0) return { success: true, updatedCount: 0 };
 
-  // GASへPOST（GAS側でUrlFetchAppでダウンロード）
+  // タブ内で画像fetchしてbase64化
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: fetchImagesInTab,
+    args: [rows, config.imageReferer],
+  });
+
+  const fetched = results[0]?.result;
+  if (!fetched) throw new Error('画像取得結果が取得できませんでした');
+
   const postRes = await fetch(GAS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'retryImages', siteKey, items: rows }),
+    body: JSON.stringify({ action: 'retryImages', siteKey, items: fetched }),
   });
   if (!postRes.ok) throw new Error('GAS通信エラー: HTTP ' + postRes.status);
   const result = await postRes.json();
@@ -105,7 +112,33 @@ async function handleRetryFailed(siteKey) {
   return { success: true, updatedCount: result.updatedCount };
 }
 
-// ========== スクレイパー本体（タブ内・テキスト+URL取得のみ） ==========
+// ========== タブ内で取得失敗行の画像をfetch ==========
+async function fetchImagesInTab(rows, referer) {
+  async function fetchAsBase64(url, ref) {
+    try {
+      const headers = {};
+      if (ref) headers['Referer'] = ref;
+      const res = await fetch(url, { headers });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result ? reader.result.split(',')[1] : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) { return null; }
+  }
+
+  const result = [];
+  for (const row of rows) {
+    const b64 = await fetchAsBase64(row.sourceImageUrl, referer);
+    result.push({ rowIndex: row.rowIndex, no: row.no, sourceImageUrl: row.sourceImageUrl, imageBase64: b64 });
+  }
+  return result;
+}
+
+// ========== スクレイパー本体（タブ内・スクレイピング＋画像fetch） ==========
 async function scraperFunc(existingNos, siteKey, siteConfigs) {
   const config = siteConfigs[siteKey];
   if (!config) return { error: '設定が見つかりません: ' + siteKey };
@@ -159,13 +192,36 @@ async function scraperFunc(existingNos, siteKey, siteConfigs) {
     return url.split('?')[0].replace(/\/w\d+\//, '/' + width + '/');
   }
 
+  async function fetchAsBase64(url, ref) {
+    try {
+      const headers = {};
+      if (ref) headers['Referer'] = ref;
+      const res = await fetch(url, { headers });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result ? reader.result.split(',')[1] : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) { return null; }
+  }
+
   const existingSet = new Set(existingNos.map(String));
   const allItems = parseItems(config.hasReview);
   const newItems = allItems.filter(item => !existingSet.has(item.no));
+
   for (const item of newItems) {
-    item.sourceImageUrl = (item.thumbnailUrl && config.highQualityWidth)
-      ? toHighQuality(item.thumbnailUrl, config.highQualityWidth)
-      : (item.thumbnailUrl || '');
+    if (item.thumbnailUrl && config.highQualityWidth) {
+      const hqUrl = toHighQuality(item.thumbnailUrl, config.highQualityWidth);
+      item.sourceImageUrl = hqUrl;
+      item.imageBase64 = await fetchAsBase64(hqUrl, config.imageReferer);
+    } else {
+      item.sourceImageUrl = item.thumbnailUrl || '';
+      item.imageBase64 = null;
+    }
   }
+
   return { items: newItems };
 }
