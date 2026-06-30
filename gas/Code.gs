@@ -7,16 +7,19 @@ var SITE_MAP = {
     sheetName: 'ナマラー自動抽出',
     folderName: 'Video_Thumbnails_Namara',
     hasReview: true,
+    imageReferer: 'https://contents.fc2.com/',
   },
   'blog-entry-625': {
     sheetName: 'シロドラー自動抽出',
     folderName: 'Video_Thumbnails_Shirodora',
     hasReview: true,
+    imageReferer: 'https://market.laxd.com/',
   },
   'blog-entry-624': {
     sheetName: 'プリカラ自動抽出',
     folderName: 'Video_Thumbnails_Purikara',
     hasReview: false,
+    imageReferer: null,
   },
 };
 
@@ -135,14 +138,14 @@ function doSave(data) {
     var driveUrl    = '';
     var imageStatus = item.sourceImageUrl ? '取得失敗' : 'なし';
 
-    if (item.imageBase64) {
+    if (item.sourceImageUrl) {
       try {
-        var result = saveImageToDrive(imageFolder, item.no, item.imageBase64);
+        var result = saveImageToDrive(imageFolder, item.no, item.sourceImageUrl, config.imageReferer);
         driveUrl    = result.driveUrl;
         imageStatus = '保存済み';
         imageCount++;
       } catch (imgErr) {
-        imageStatus = 'Drive保存失敗';
+        imageStatus = '取得失敗';
         console.error('画像保存エラー No=' + item.no + ':', imgErr.message);
       }
     }
@@ -177,9 +180,9 @@ function doRetryImages(data) {
   var updatedCount = 0;
 
   (data.items || []).forEach(function(item) {
-    if (!item.imageBase64 || !item.rowIndex) return;
+    if (!item.sourceImageUrl || !item.rowIndex) return;
     try {
-      var result = saveImageToDrive(imageFolder, item.no, item.imageBase64);
+      var result = saveImageToDrive(imageFolder, item.no, item.sourceImageUrl, config.imageReferer);
       sheet.getRange(item.rowIndex, cols.driveUrl).setValue(result.driveUrl);
       sheet.getRange(item.rowIndex, cols.imageStatus).setValue('保存済み');
       updatedCount++;
@@ -192,10 +195,15 @@ function doRetryImages(data) {
 }
 
 // ========== ヘルパー ==========
-function saveImageToDrive(folder, no, base64) {
-  var decoded = Utilities.base64Decode(base64);
-  var blob    = Utilities.newBlob(decoded, 'image/jpeg', no + '.jpg');
-  var file    = folder.createFile(blob);
+function saveImageToDrive(folder, no, sourceUrl, referer) {
+  var options = { muteHttpExceptions: true };
+  if (referer) options.headers = { 'Referer': referer };
+  var response = UrlFetchApp.fetch(sourceUrl, options);
+  if (response.getResponseCode() !== 200) {
+    throw new Error('画像DL失敗 HTTP ' + response.getResponseCode() + ': ' + sourceUrl);
+  }
+  var blob = response.getBlob().setName(no + '.jpg');
+  var file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return { driveUrl: 'https://drive.google.com/uc?id=' + file.getId() };
 }

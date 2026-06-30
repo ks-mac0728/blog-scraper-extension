@@ -1,4 +1,4 @@
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwN9AKEc1aegn4sWodU3SlltTgSeaBP3D7gAMp6j51jkvzfW0pkJQxrag8akiqN87Wwfw/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzpAxmtdCdbb_DRwh0LevDEhfzaiJirAgbnkKeu2jG2jwxM0TyPUCfDin088acxnAFObA/exec';
 
 const SITE_CONFIGS = {
   'blog-entry-570': {
@@ -56,6 +56,7 @@ async function handleScrape(tabId, siteKey) {
     console.warn('[BG] 既存No取得失敗:', e.message);
   }
 
+  // タブ内でDOM解析（テキスト情報とsourceImageUrlのみ）
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     func: scraperFunc,
@@ -67,12 +68,7 @@ async function handleScrape(tabId, siteKey) {
   if (scraped.error) throw new Error(scraped.error);
   if (scraped.items.length === 0) return { success: true, savedCount: 0, imageCount: 0 };
 
-  for (const item of scraped.items) {
-    item.imageBase64 = item.sourceImageUrl
-      ? await fetchAsBase64(item.sourceImageUrl, config.imageReferer)
-      : null;
-  }
-
+  // GASへPOST（画像はGAS側でUrlFetchAppでダウンロード）
   const res = await fetch(GAS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
@@ -96,10 +92,7 @@ async function handleRetryFailed(siteKey) {
   if (error) throw new Error(error);
   if (!rows || rows.length === 0) return { success: true, updatedCount: 0 };
 
-  for (const row of rows) {
-    row.imageBase64 = await fetchAsBase64(row.sourceImageUrl, config.imageReferer);
-  }
-
+  // GASへPOST（GAS側でUrlFetchAppでダウンロード）
   const postRes = await fetch(GAS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
@@ -112,23 +105,7 @@ async function handleRetryFailed(siteKey) {
   return { success: true, updatedCount: result.updatedCount };
 }
 
-// ========== 画像fetch（Service Worker・CORS回避） ==========
-async function fetchAsBase64(url, referer) {
-  try {
-    const res = await fetch(url, { headers: { 'Referer': referer || '' } });
-    if (!res.ok) { console.warn('[BG] 画像取得失敗 HTTP ' + res.status + ':', url); return null; }
-    const buf = await res.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let bin = '';
-    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
-  } catch (e) {
-    console.warn('[BG] 画像fetch失敗:', url, e.message);
-    return null;
-  }
-}
-
-// ========== スクレイパー本体（タブ内・テキストのみ） ==========
+// ========== スクレイパー本体（タブ内・テキスト+URL取得のみ） ==========
 async function scraperFunc(existingNos, siteKey, siteConfigs) {
   const config = siteConfigs[siteKey];
   if (!config) return { error: '設定が見つかりません: ' + siteKey };
