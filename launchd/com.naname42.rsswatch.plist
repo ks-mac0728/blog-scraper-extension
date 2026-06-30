@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.naname42.rsswatch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/saitoukousuke/blog-scraper-extension/rss_watch.py</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/saitoukousuke/blog-scraper-extension/logs/rss_watch.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/saitoukousuke/blog-scraper-extension/logs/rss_watch.error.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
