@@ -46,6 +46,9 @@ blog-scraper-extension/
 - 作業中に「このプロジェクト固有ではなく、全プロジェクト・全端末に共通する運用ルールだ」と気づいた場合、このプロジェクトのCLAUDE.mdだけに書いて終わらせず、`~/Documents/operations`（`templates/CLAUDE.md.template`・`templates/PROGRESS.md.template`）や`~/Documents/dev-environment`側も直接編集してcommit・pushすること
 - これを怠ると、個別プロジェクトで得た知見がそのプロジェクト内に閉じ込められ、他のプロジェクト・他端末に共有されないまま失われる
 
+## 開発環境について
+開発環境（拠点構成・ネットワーク・認証方式等）の詳細は `~/Documents/dev-environment/PROGRESS.md` を参照すること。ここには複製しない（重複すると情報が古くなるため）。
+
 ## GAS デプロイ手順
 ```bash
 cd gas/
