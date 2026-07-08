@@ -225,6 +225,64 @@ function doGet(e) {
     return jsonOut({ rows: rows });
   }
 
+  if (action === 'readDoc') {
+    // 調査用: Googleドキュメントのテキストをタブごとに読み出す（一時的なデバッグアクション）
+    var docId = e.parameter.docId;
+    var tabIndex = e.parameter.tabIndex; // 省略可
+    if (!docId) return jsonOut({ error: 'docIdが指定されていません' });
+    try {
+      var doc = DocumentApp.openById(docId);
+      var tabs = doc.getTabs();
+      if (tabs && tabs.length > 0) {
+        var result = tabs.map(function(tab, i) {
+          var body = tab.asDocumentTab().getBody();
+          return { index: i, title: tab.getTitle(), text: body.getText() };
+        });
+        if (tabIndex !== undefined && tabIndex !== '') {
+          result = [result[parseInt(tabIndex, 10)]];
+        }
+        return jsonOut({ success: true, tabs: result });
+      }
+      return jsonOut({ success: true, tabs: [{ index: 0, title: doc.getName(), text: doc.getBody().getText() }] });
+    } catch (err) {
+      return jsonOut({ error: err.message });
+    }
+  }
+
+  if (action === 'deleteTab') {
+    var delSheetId = e.parameter.sheetId;
+    var delTabName = e.parameter.tabName;
+    if (!delSheetId || !delTabName) return jsonOut({ error: 'sheetId/tabNameが指定されていません' });
+    try {
+      var delSs = SpreadsheetApp.openById(delSheetId);
+      var delSheet = delSs.getSheetByName(delTabName);
+      if (!delSheet) return jsonOut({ error: 'シートが見つかりません: ' + delTabName });
+      delSs.deleteSheet(delSheet);
+      return jsonOut({ success: true });
+    } catch (err) {
+      return jsonOut({ error: err.message });
+    }
+  }
+
+  if (action === 'inspectSheet') {
+    // 調査用: 別スプレッドシートの構造を確認する（一時的なデバッグアクション）
+    var targetId = e.parameter.sheetId;
+    if (!targetId) return jsonOut({ error: 'sheetIdが指定されていません' });
+    try {
+      var targetSs = SpreadsheetApp.openById(targetId);
+      var sheets = targetSs.getSheets().map(function(sh) {
+        var lastRow = sh.getLastRow();
+        var lastCol = sh.getLastColumn();
+        var header = lastRow > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+        var sample = lastRow > 1 ? sh.getRange(2, 1, Math.min(5, lastRow - 1), lastCol).getValues() : [];
+        return { name: sh.getName(), lastRow: lastRow, lastCol: lastCol, header: header, sample: sample };
+      });
+      return jsonOut({ success: true, sheets: sheets });
+    } catch (err) {
+      return jsonOut({ error: err.message });
+    }
+  }
+
   if (action === 'backfillSeriesInfo') {
     // 既存の全行について、No列の値からシリーズ名・出演者Noを再計算して書き込む
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -278,6 +336,10 @@ function doPost(e) {
 
     if (data.action === 'fillReview') {
       return doFillReview(data);
+    }
+
+    if (data.action === 'writeStagingRows') {
+      return doWriteStagingRows(data);
     }
 
     return jsonOut({ error: '不明なアクション: ' + data.action });
@@ -458,6 +520,37 @@ function doFillReview(data) {
   });
 
   return jsonOut({ success: true, updatedCount: updatedCount });
+}
+
+// 別スプレッドシートの調査用シートへ行を書き込む（無ければヘッダー付きで新規作成）
+function doWriteStagingRows(data) {
+  var sheetId = data.sheetId;
+  var tabName = data.tabName;
+  var header  = data.header;
+  var rows    = data.rows || [];
+  if (!sheetId || !tabName) return jsonOut({ error: 'sheetId/tabNameが指定されていません' });
+
+  try {
+    var ss = SpreadsheetApp.openById(sheetId);
+    var sheet = ss.getSheetByName(tabName);
+    if (!sheet) {
+      sheet = ss.insertSheet(tabName);
+      if (header && header.length) {
+        sheet.getRange(1, 1, 1, header.length)
+          .setValues([header])
+          .setBackground('#d9ead3')
+          .setFontWeight('bold');
+        sheet.setFrozenRows(1);
+      }
+    }
+    if (rows.length > 0) {
+      var startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+    }
+    return jsonOut({ success: true, addedCount: rows.length });
+  } catch (err) {
+    return jsonOut({ error: err.message });
+  }
 }
 
 // ========== ヘルパー ==========
