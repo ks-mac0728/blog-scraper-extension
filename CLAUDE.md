@@ -42,6 +42,10 @@ blog-scraper-extension/
 - **GitHubアカウント**: ks-mac0728
 - **claspトークン**: ~/.clasprc.json に保存済み
 
+## 運用ルールの共有ルール
+- 作業中に「このプロジェクト固有ではなく、全プロジェクト・全端末に共通する運用ルールだ」と気づいた場合、このプロジェクトのCLAUDE.mdだけに書いて終わらせず、`~/Documents/operations`（`templates/CLAUDE.md.template`・`templates/PROGRESS.md.template`）や`~/Documents/dev-environment`側も直接編集してcommit・pushすること
+- これを怠ると、個別プロジェクトで得た知見がそのプロジェクト内に閉じ込められ、他のプロジェクト・他端末に共有されないまま失われる
+
 ## GAS デプロイ手順
 ```bash
 cd gas/
